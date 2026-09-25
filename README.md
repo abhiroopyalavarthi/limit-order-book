@@ -33,7 +33,25 @@ Needs CMake 3.20+ and a C++20 compiler. GoogleTest is downloaded at configure ti
 - Modify is a cancel plus a re-add, so the order goes to the back of the queue at its new price.
 - Prices are `int64_t` cents. A `double` can't represent 0.1 exactly, so two prices that should be equal can compare unequal, and a price level keyed by a `double` could split in two. The replay tool parses `"189.52"` straight into `18952` without going through floating point.
 
-## Data structures
+## Scope
+
+All core and stretch features are built.
+
+| Feature | Tier | Notes |
+|---|---|---|
+| Limit and market orders | Core | Limit orders rest if unfilled; market orders take any price and drop the rest |
+| Price-time priority | Core | Best price first, then FIFO at each price |
+| Cancel and modify by ID | Core | Modify = cancel + re-add, so the order loses its place in line |
+| Partial fills and trade reports | Core | One report per fill: buyer ID, seller ID, price, quantity |
+| Best bid, best ask, spread | Core | O(1) queries |
+| Integer prices | Core | `int64_t` cents, never `double` |
+| Benchmark | Core | 1M and 10M random operations; throughput plus p50, p99, p99.9 latency |
+| V2 fast book | Core | Tick-indexed price array, memory pool, flat hash map for IDs |
+| IOC and FOK orders | Stretch | IOC drops what doesn't fill; FOK checks it can fill completely first (sums level totals in V2, walks orders in V1) |
+| Multiple symbols | Stretch | `MatchingEngine<Book>` keeps one book per ticker; books share nothing |
+| Replay an order file | Stretch | `replay` reads a CSV (`symbol,action,id,side,type,price,qty`), parses it before the timer starts, sizes each symbol's V2 price band from the file, and prints trades plus a per-symbol summary. `replay --generate N file.csv` writes a random file for five symbols. Tested on generated files only; real data such as LOBSTER or ITCH would need a small converter. |
+
+## Design
 
 ### V1: `std::map<Price, std::list<Order>>` per side
 
@@ -56,7 +74,21 @@ L = number of price levels on that side.
 - **ID map:** `FlatHashMap` uses open addressing with linear probing in one flat array. Erase uses backward shift instead of tombstones, so the probe chains don't degrade over time.
 - **Trade-off:** the price band has to be fixed up front, and orders outside it are rejected. That's normal for a real exchange, which has a tick size and price bands. A symbol whose price drifts a long way would need the array re-centered.
 
-## Benchmark
+## Milestones
+
+| Day | Milestone | What it produced | Status |
+|---|---|---|---|
+| 1 | Types and build setup | `Order`, `Trade` and `Side` types; CMake + GoogleTest | Done |
+| 2 | Add and match | Limit orders matched by price-time priority | Done |
+| 3 | Cancel, modify, market orders | Partial fills and a test for each edge case | Done |
+| 4 | Benchmark | Random order generator, throughput, p50/p99 latency; V1 numbers | Done |
+| 5 | Version 2 | Tick-indexed array, memory pool, flat hash map; V2 numbers | Done |
+| 6 | Profile and fix | Valgrind found the ID-lookup cache misses; identity hash fix | Done |
+| 7 | README and GitHub | Results table, stretch features, CI on Linux and macOS | Done |
+
+## Results
+
+### Benchmark
 
 `bench` generates a stream of operations before the clock starts: 60% limit orders, 5% market, 3% IOC, 2% FOK, 22% cancels and 8% modifies. Prices are normally distributed around a mid price. Cancels and modifies target random earlier IDs, so some of them hit orders that have already filled.
 
@@ -80,7 +112,7 @@ Two caveats:
 - `steady_clock` on Apple Silicon ticks every ~41.7 ns, so the p50 values (42 and 83 ns) are one and two clock ticks, not exact measurements. Throughput is the more reliable comparison; p99 and above are well above the tick size.
 - V1's worst case (max ~49 ms at 10M ops) comes from `std::unordered_map` rehashing all the IDs at once. V2's max was 0.7 ms.
 
-## Day 6: profiling
+### Profiling (Day 6)
 
 V2 was profiled with `valgrind --tool=callgrind --cache-sim=yes` on a 300k-op run (`./build/bench 300000 profile`).
 
@@ -103,12 +135,6 @@ cmake -B build-mix -DORDERBOOK_MIXED_HASH=ON && cmake --build build-mix
 ```
 
 Valgrind doesn't run on Apple Silicon. On a Mac, use Instruments (Time Profiler, or CPU Counters for cache misses), or `sample` against a running `bench`.
-
-## Stretch features
-
-- **IOC and FOK** in both books. The FOK check sums level totals in V2 and walks the orders in V1.
-- **Multiple symbols:** `MatchingEngine<Book>` keeps one book per ticker. The books share nothing, which is also the easiest way to scale: shard symbols across threads with no locks between them.
-- **Replay:** `replay` reads a CSV (`symbol,action,id,side,type,price,qty`), parses everything before the timer starts, sizes each symbol's V2 price band from the prices in the file, then prints the trades and a per-symbol summary. `replay --generate N file.csv` writes a random file for five symbols. I didn't have access to real exchange data, so this was tested on generated files; real data such as LOBSTER or ITCH would need a small converter to this format.
 
 ## What I'd do next
 
