@@ -56,12 +56,18 @@ void FastOrderBook::unlink(Level& level, uint32_t n) {
 // ---------- best price tracking ----------
 // When the best level empties, walk the array to the next non-empty one.
 
+// If that was the last level on the side, jump straight to "none" instead of
+// walking the rest of the band (found when the book was used as a backtest
+// exchange: every bar emptied a side and paid for a ~30k-level scan).
+
 void FastOrderBook::fixBestBidAfterEmpty() {
+    if (bidLevels_ == 0) { bestBid_ = -1; return; }
     while (bestBid_ >= 0 && bids_[bestBid_].head == kNil) --bestBid_;
 }
 
 void FastOrderBook::fixBestAskAfterEmpty() {
     const int64_t n = static_cast<int64_t>(asks_.size());
+    if (askLevels_ == 0) { bestAsk_ = n; return; }
     while (bestAsk_ < n && asks_[bestAsk_].head == kNil) ++bestAsk_;
 }
 
@@ -116,7 +122,10 @@ void FastOrderBook::matchBuy(Order& in, std::vector<Trade>& out) {
                 freeNode(r);
             }
         }
-        if (level.head == kNil) fixBestAskAfterEmpty();
+        if (level.head == kNil) {
+            --askLevels_;
+            fixBestAskAfterEmpty();
+        }
     }
 }
 
@@ -142,7 +151,10 @@ void FastOrderBook::matchSell(Order& in, std::vector<Trade>& out) {
                 freeNode(r);
             }
         }
-        if (level.head == kNil) fixBestBidAfterEmpty();
+        if (level.head == kNil) {
+            --bidLevels_;
+            fixBestBidAfterEmpty();
+        }
     }
 }
 
@@ -170,9 +182,11 @@ void FastOrderBook::rest(const Order& order) {
     index_.insert(order.id, n);
     int64_t idx = static_cast<int64_t>(toIdx(order.price));
     if (order.side == Side::Buy) {
+        if (bids_[idx].head == kNil) ++bidLevels_;
         pushBack(bids_[idx], n);
         if (idx > bestBid_) bestBid_ = idx;
     } else {
+        if (asks_[idx].head == kNil) ++askLevels_;
         pushBack(asks_[idx], n);
         if (idx < bestAsk_) bestAsk_ = idx;
     }
@@ -189,10 +203,16 @@ bool FastOrderBook::cancelOrder(OrderId id) {
 
     if (o.side == Side::Buy) {
         unlink(bids_[idx], n);
-        if (idx == bestBid_ && bids_[idx].head == kNil) fixBestBidAfterEmpty();
+        if (bids_[idx].head == kNil) {
+            --bidLevels_;
+            if (idx == bestBid_) fixBestBidAfterEmpty();
+        }
     } else {
         unlink(asks_[idx], n);
-        if (idx == bestAsk_ && asks_[idx].head == kNil) fixBestAskAfterEmpty();
+        if (asks_[idx].head == kNil) {
+            --askLevels_;
+            if (idx == bestAsk_) fixBestAskAfterEmpty();
+        }
     }
     index_.erase(id);
     freeNode(n);

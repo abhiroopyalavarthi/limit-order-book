@@ -81,6 +81,10 @@ private:
     // best level indexes. "none" = -1 for bids, levels count for asks
     int64_t bestBid_;
     int64_t bestAsk_;
+    // how many price levels on each side have orders. When a side empties the
+    // best-price walk would otherwise scan the whole price band for nothing
+    size_t bidLevels_ = 0;
+    size_t askLevels_ = 0;
 
     std::vector<Node> pool_;
     std::vector<uint32_t> freeList_;

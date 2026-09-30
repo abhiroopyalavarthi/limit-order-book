@@ -199,6 +199,29 @@ TYPED_TEST(BookTest, ZeroQuantityIsRejected) {
 
 // ---------- IOC / FOK ----------
 
+// A side that empties (by cancel or by being traded through) and then
+// refills has to find its best price again. FastOrderBook skips the scan
+// when a side has no levels left, so check both ways of emptying it.
+TYPED_TEST(BookTest, SideEmptiesAndRefills) {
+    TypeParam book;
+    book.addOrder(1, Side::Sell, OrderType::Limit, 5010, 100);
+    book.addOrder(2, Side::Sell, OrderType::Limit, 5020, 100);
+    book.addOrder(3, Side::Buy, OrderType::Limit, 4990, 100);
+    EXPECT_TRUE(book.cancelOrder(1));
+    EXPECT_EQ(book.bestAsk(), 5020);
+    EXPECT_TRUE(book.cancelOrder(2));
+    EXPECT_FALSE(book.bestAsk());
+    book.addOrder(4, Side::Sell, OrderType::Limit, 5030, 50);
+    EXPECT_EQ(book.bestAsk(), 5030);
+
+    // empty the bid side by trading through it
+    book.addOrder(5, Side::Sell, OrderType::Market, 0, 100);
+    EXPECT_FALSE(book.bestBid());
+    book.addOrder(6, Side::Buy, OrderType::Limit, 4980, 10);
+    EXPECT_EQ(book.bestBid(), 4980);
+    EXPECT_EQ(book.bestAsk(), 5030);
+}
+
 TYPED_TEST(BookTest, IocFillsWhatItCanAndDropsTheRest) {
     TypeParam book;
     book.addOrder(1, Side::Sell, OrderType::Limit, 5005, 100);
