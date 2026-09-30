@@ -222,6 +222,32 @@ TYPED_TEST(BookTest, SideEmptiesAndRefills) {
     EXPECT_EQ(book.bestAsk(), 5030);
 }
 
+TYPED_TEST(BookTest, ReduceKeepsTimePriority) {
+    TypeParam book;
+    book.addOrder(1, Side::Sell, OrderType::Limit, 5000, 100);
+    book.addOrder(2, Side::Sell, OrderType::Limit, 5000, 100);
+    EXPECT_TRUE(book.reduceOrder(1, 40));
+    EXPECT_EQ(book.volumeAt(Side::Sell, 5000), 140u);
+    // order 1 is still first in the queue
+    auto trades = book.addOrder(3, Side::Buy, OrderType::Limit, 5000, 50);
+    ASSERT_EQ(trades.size(), 2u);
+    EXPECT_EQ(trades[0].sellId, 1u);
+    EXPECT_EQ(trades[0].quantity, 40u);
+    EXPECT_EQ(trades[1].sellId, 2u);
+    EXPECT_EQ(trades[1].quantity, 10u);
+}
+
+TYPED_TEST(BookTest, ReduceRejectsIncreaseAndUnknownId) {
+    TypeParam book;
+    book.addOrder(1, Side::Buy, OrderType::Limit, 5000, 100);
+    EXPECT_FALSE(book.reduceOrder(1, 100));
+    EXPECT_FALSE(book.reduceOrder(1, 150));
+    EXPECT_FALSE(book.reduceOrder(99, 10));
+    EXPECT_TRUE(book.reduceOrder(1, 0));  // zero = cancel
+    EXPECT_EQ(book.orderCount(), 0u);
+    EXPECT_FALSE(book.bestBid());
+}
+
 TYPED_TEST(BookTest, IocFillsWhatItCanAndDropsTheRest) {
     TypeParam book;
     book.addOrder(1, Side::Sell, OrderType::Limit, 5005, 100);

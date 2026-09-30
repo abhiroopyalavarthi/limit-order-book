@@ -117,6 +117,16 @@ bool OrderBook::cancelOrder(OrderId id) {
     return true;
 }
 
+bool OrderBook::reduceOrder(OrderId id, Quantity newRemaining) {
+    auto found = index_.find(id);
+    if (found == index_.end()) return false;
+    Order& o = *found->second.it;
+    if (newRemaining >= o.remaining) return false;
+    if (newRemaining == 0) return cancelOrder(id);
+    o.remaining = newRemaining;  // same list node, so same place in the queue
+    return true;
+}
+
 bool OrderBook::modifyOrder(OrderId id, Price newPrice, Quantity newQty,
                             std::vector<Trade>& out) {
     auto found = index_.find(id);

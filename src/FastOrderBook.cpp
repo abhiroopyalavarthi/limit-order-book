@@ -219,6 +219,18 @@ bool FastOrderBook::cancelOrder(OrderId id) {
     return true;
 }
 
+bool FastOrderBook::reduceOrder(OrderId id, Quantity newRemaining) {
+    const uint32_t* found = index_.find(id);
+    if (!found) return false;
+    Order& o = pool_[*found].order;
+    if (newRemaining >= o.remaining) return false;
+    if (newRemaining == 0) return cancelOrder(id);
+    Level& level = o.side == Side::Buy ? bids_[toIdx(o.price)] : asks_[toIdx(o.price)];
+    level.total -= o.remaining - newRemaining;
+    o.remaining = newRemaining;  // node stays where it is in the level's list
+    return true;
+}
+
 bool FastOrderBook::modifyOrder(OrderId id, Price newPrice, Quantity newQty,
                                 std::vector<Trade>& out) {
     const uint32_t* found = index_.find(id);

@@ -37,6 +37,12 @@ public:
     bool modifyOrder(OrderId id, Price newPrice, Quantity newQty,
                      std::vector<Trade>& out);
 
+    // Shrinks a resting order to newRemaining shares without moving it in the
+    // queue (a quantity-down amend keeps time priority on real exchanges).
+    // newRemaining == 0 cancels it. Returns false if the id isn't resting or
+    // newRemaining isn't smaller than what's left.
+    bool reduceOrder(OrderId id, Quantity newRemaining);
+
     std::optional<Price> bestBid() const;
     std::optional<Price> bestAsk() const;
     std::optional<Price> spread() const;
